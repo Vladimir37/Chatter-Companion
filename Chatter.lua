@@ -11,12 +11,35 @@ Chatter.tonePollRemaining = 0
 Chatter.pendingBackstoryGuid = nil
 Chatter.backstoryPollElapsed = 0
 Chatter.backstoryPollRemaining = 0
+Chatter.sendQueue = {}
+Chatter.sendElapsed = 0
+Chatter.saveLocked = false
+Chatter.saveLockRemaining = 0
+Chatter.uploadGuid = nil
+
+-- The client cuts an outgoing chat line at 255 characters.
+local MAX_CHAT_LENGTH = 255
+-- Longest percent-encoded payload carried by one `put`.
+local CHUNK_BUDGET = 200
+-- One message per interval keeps the upload clear of chat
+-- flood protection.
+local SEND_INTERVAL = 0.3
+-- Fallback in case the server never answers an upload.
+local SAVE_LOCK_TIMEOUT = 20
 
 local function trim(value)
     if not value then
         return ""
     end
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Counts UTF-8 characters, matching SetMaxLetters on the
+-- edit boxes and the VARCHAR(64) columns on the server.
+-- Continuation bytes are 0x80-0xBF and are not counted.
+local function utf8len(value)
+    local _, count = string.gsub(value or "", "[^\128-\191]", "")
+    return count
 end
 
 local function sanitizeInput(value)
@@ -77,6 +100,86 @@ end
 
 function Chatter:SendCommand(command)
     SendChatMessage(".llmc " .. command, "SAY")
+end
+
+function Chatter:QueueCommand(command)
+    table.insert(self.sendQueue, command)
+end
+
+function Chatter:FlushSendQueue()
+    self.sendQueue = {}
+    self.sendElapsed = 0
+end
+
+function Chatter:HandleSendQueue(elapsed)
+    if #self.sendQueue == 0 then
+        return
+    end
+
+    self.sendElapsed = self.sendElapsed + elapsed
+    if self.sendElapsed < SEND_INTERVAL then
+        return
+    end
+
+    self.sendElapsed = 0
+    self:SendCommand(table.remove(self.sendQueue, 1))
+
+    if #self.sendQueue == 0 then
+        -- The commit has left; nothing is staged server-side
+        -- for this bot any more.
+        self.uploadGuid = nil
+    end
+end
+
+-- Splits a percent-encoded value on a character budget
+-- without ever cutting a %XX escape in half.
+function Chatter:SplitEncoded(encoded, budget)
+    local chunks = {}
+    local total = string.len(encoded)
+    local pos = 1
+
+    while pos <= total do
+        local stop = pos + budget - 1
+        if stop >= total then
+            stop = total
+        elseif string.sub(encoded, stop, stop) == "%" then
+            stop = stop - 1
+        elseif string.sub(encoded, stop - 1, stop - 1) == "%" then
+            stop = stop - 2
+        end
+
+        if stop < pos then
+            return nil
+        end
+
+        table.insert(chunks, string.sub(encoded, pos, stop))
+        pos = stop + 1
+    end
+
+    return chunks
+end
+
+function Chatter:LockSave()
+    self.saveLocked = true
+    self.saveLockRemaining = SAVE_LOCK_TIMEOUT
+    self:SetSaveEnabled(false)
+end
+
+function Chatter:UnlockSave()
+    self.saveLocked = false
+    self.saveLockRemaining = 0
+    self:UpdateSaveButton()
+end
+
+function Chatter:HandleSaveLock(elapsed)
+    if not self.saveLocked then
+        return
+    end
+
+    self.saveLockRemaining = self.saveLockRemaining - elapsed
+    if self.saveLockRemaining <= 0 then
+        self:UnlockSave()
+    end
 end
 
 function Chatter:StopTonePoll()
@@ -158,6 +261,11 @@ function Chatter:SetSaveEnabled(enabled)
 end
 
 function Chatter:UpdateSaveButton()
+    if self.saveLocked then
+        self:SetSaveEnabled(false)
+        return
+    end
+
     local loaded = self.loadedTraits
     if not loaded then
         self:SetSaveEnabled(false)
@@ -543,6 +651,13 @@ function Chatter:ApplyProfileToPanel(p, profile)
 end
 
 function Chatter:ApplyProfile(profile)
+    -- A profile that arrives while an upload is still in
+    -- flight carries the pre-save values, so applying it
+    -- would revert the boxes the player is saving.
+    if self.uploadGuid and self.uploadGuid == profile.guid then
+        return
+    end
+
     local awaitingTone = (
         self.pendingToneGuid == profile.guid
     )
@@ -600,6 +715,14 @@ function Chatter:SelectBot(guid)
         self:StopBackstoryPoll()
     end
 
+    -- Leave no half-finished edit staged for the old bot
+    if self.uploadGuid and self.uploadGuid ~= guid then
+        self:FlushSendQueue()
+        self:SendCommand("cancel " .. self.uploadGuid)
+        self.uploadGuid = nil
+        self:UnlockSave()
+    end
+
     self.selectedGuid = guid
     self.pendingProfileGuid = guid
     self:UpdateDropdown()
@@ -638,8 +761,8 @@ function Chatter:SaveProfile()
         return
     end
 
-    if string.len(trait1) > 64 or string.len(trait2) > 64
-        or string.len(trait3) > 64 then
+    if utf8len(trait1) > 64 or utf8len(trait2) > 64
+        or utf8len(trait3) > 64 then
         self:SetStatus("Traits must stay under 64 characters.", 1, 0.2, 0.2)
         return
     end
@@ -670,6 +793,39 @@ function Chatter:SaveProfile()
     end
 end
 
+-- Uploads the traits one `put` per chunk, then commits.
+-- Returns false if a trait somehow refuses to split.
+function Chatter:QueueChunkedSave(guid, t)
+    local fields = {
+        { "t1", t.trait1 },
+        { "t2", t.trait2 },
+        { "t3", t.trait3 },
+    }
+
+    local queued = {}
+    for _, field in ipairs(fields) do
+        local chunks = self:SplitEncoded(
+            self:Encode(field[2]), CHUNK_BUDGET
+        )
+        if not chunks then
+            return false
+        end
+        for i = 1, #chunks do
+            table.insert(queued, string.format(
+                "put %d %s %d %d %s",
+                guid, field[1], i, #chunks, chunks[i]
+            ))
+        end
+    end
+
+    for _, command in ipairs(queued) do
+        self:QueueCommand(command)
+    end
+    self:QueueCommand(string.format("commit %d", guid))
+    self.uploadGuid = guid
+    return true
+end
+
 function Chatter:DoSaveProfile()
     local t = self.pendingTraits
     if not t or not self.selectedGuid then
@@ -679,15 +835,27 @@ function Chatter:DoSaveProfile()
     local guid = self.selectedGuid
     self:StopTonePoll()
     self:StopBackstoryPoll()
-    self:SendCommand(
-        string.format(
-            "set %d %s %s %s",
-            guid,
-            self:Encode(t.trait1),
-            self:Encode(t.trait2),
-            self:Encode(t.trait3)
-        )
+    self:FlushSendQueue()
+
+    local line = string.format(
+        "set %d %s %s %s",
+        guid,
+        self:Encode(t.trait1),
+        self:Encode(t.trait2),
+        self:Encode(t.trait3)
     )
+
+    if string.len(".llmc " .. line) <= MAX_CHAT_LENGTH then
+        self:SendCommand(line)
+    elseif not self:QueueChunkedSave(guid, t) then
+        self:SetStatus(
+            "Could not send these traits.", 1, 0.2, 0.2
+        )
+        self.pendingTraits = nil
+        return
+    end
+
+    self:LockSave()
     -- Start polls immediately so placeholders appear
     -- without waiting for the server round-trip
     self:StartTonePoll(guid)
@@ -1211,6 +1379,11 @@ function Chatter:HandleBackstoryPayload(rest)
     local numGuid = tonumber(guid)
     local text = self:Decode(encoded or "-")
 
+    -- Stale while an upload is still in flight
+    if self.uploadGuid and self.uploadGuid == numGuid then
+        return
+    end
+
     -- Only apply non-empty backstory to boxes;
     -- empty means still generating — preserve
     -- the "Creating background story..." placeholder
@@ -1290,6 +1463,7 @@ function Chatter:HandleSystemMessage(message)
         )
         if guid and name then
             self.selectedGuid = tonumber(guid)
+            self:UnlockSave()
             local changed = (flag == "changed")
             if changed then
                 -- Polls were started in DoSaveProfile;
@@ -1366,6 +1540,10 @@ function Chatter:HandleSystemMessage(message)
         local _, encoded = string.match(
             rest, "^(%S+)%s*(.-)$"
         )
+        -- Abandon the rest of an upload the server rejected
+        self:FlushSendQueue()
+        self.uploadGuid = nil
+        self:UnlockSave()
         self:SetStatus(
             self:Decode(encoded), 1, 0.2, 0.2
         )
@@ -1414,6 +1592,8 @@ SlashCmdList["CHATTER"] = function()
 end
 
 Chatter:SetScript("OnUpdate", function(self, elapsed)
+    self:HandleSendQueue(elapsed)
+    self:HandleSaveLock(elapsed)
     self:HandleTonePoll(elapsed)
     self:HandleBackstoryPoll(elapsed)
 end)
