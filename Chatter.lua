@@ -1,4 +1,4 @@
-﻿local Chatter = CreateFrame("Frame", "ChatterEventFrame")
+local Chatter = CreateFrame("Frame", "ChatterEventFrame")
 
 Chatter.prefix = "CHATTER_ADDON "
 Chatter.roster = {}
@@ -267,11 +267,11 @@ function Chatter:UpdateSaveButton()
     end
 
     local loaded = self.loadedTraits
-    if not loaded then
+    if not loaded or self.pendingProfileGuid or self.forgetQueue then
         self:SetSaveEnabled(false)
         return
     end
-    local p = self.frame or self.traitsPanel
+    local p = self:GetActivePanel()
     if not p then
         self:SetSaveEnabled(false)
         return
@@ -392,223 +392,6 @@ function Chatter:RestoreWindowPosition()
     end
 end
 
-local function createLabel(parent, text, x, y)
-    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    label:SetJustifyH("LEFT")
-    label:SetText(text)
-    return label
-end
-
-local function createEditBox(parent, x, y, width, height)
-    local holder = CreateFrame("Frame", nil, parent)
-    holder:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    holder:SetWidth(width)
-    holder:SetHeight(height)
-    holder:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 8,
-        edgeSize = 12,
-        insets = {
-            left = 3,
-            right = 3,
-            top = 3,
-            bottom = 3
-        }
-    })
-    holder:SetBackdropColor(0, 0, 0, 0.85)
-    holder:SetBackdropBorderColor(0.55, 0.55, 0.55, 1)
-
-    local box = CreateFrame("EditBox", nil, holder)
-    box:SetAutoFocus(false)
-    box:SetMultiLine(false)
-    box:SetFontObject(GameFontHighlight)
-    box:SetPoint("TOPLEFT", holder, "TOPLEFT", 8, -6)
-    box:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", -8, 6)
-    box:SetTextInsets(0, 0, 0, 0)
-    box:SetJustifyH("LEFT")
-
-    holder.editBox = box
-    return box
-end
-
-local function createMultiLineEditBox(
-    parent, x, y, width, height
-)
-    local holder = CreateFrame("Frame", nil, parent)
-    holder:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    holder:SetWidth(width)
-    holder:SetHeight(height)
-    holder:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 8,
-        edgeSize = 12,
-        insets = {
-            left = 3,
-            right = 3,
-            top = 3,
-            bottom = 3
-        }
-    })
-    holder:SetBackdropColor(0, 0, 0, 0.85)
-    holder:SetBackdropBorderColor(0.55, 0.55, 0.55, 1)
-
-    -- Scrollbar (thin slider on the right)
-    local scrollbar = CreateFrame(
-        "Slider", nil, holder
-    )
-    scrollbar:SetWidth(12)
-    scrollbar:SetPoint(
-        "TOPRIGHT", holder, "TOPRIGHT", -4, -6
-    )
-    scrollbar:SetPoint(
-        "BOTTOMRIGHT", holder, "BOTTOMRIGHT", -4, 6
-    )
-    scrollbar:SetOrientation("VERTICAL")
-    scrollbar:SetMinMaxValues(0, 1)
-    scrollbar:SetValue(0)
-    scrollbar:SetValueStep(1)
-    scrollbar:SetThumbTexture(
-        "Interface\\Buttons\\UI-ScrollBar-Knob"
-    )
-    scrollbar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-    })
-    scrollbar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
-
-    local scroll = CreateFrame(
-        "ScrollFrame", nil, holder
-    )
-    scroll:SetPoint("TOPLEFT", holder, "TOPLEFT", 6, -6)
-    scroll:SetPoint(
-        "BOTTOMRIGHT", scrollbar, "BOTTOMLEFT", -2, 0
-    )
-
-    local box = CreateFrame("EditBox", nil, scroll)
-    box:SetAutoFocus(false)
-    box:SetMultiLine(true)
-    box:SetFontObject(GameFontHighlight)
-    -- Full width minus scrollbar and padding
-    box:SetWidth(width - 28)
-    box:SetTextInsets(2, 2, 2, 2)
-    box:SetJustifyH("LEFT")
-    scroll:SetScrollChild(box)
-
-    -- Update width dynamically when shown
-    scroll:SetScript("OnSizeChanged", function(self)
-        box:SetWidth(self:GetWidth())
-    end)
-
-    -- Sync helper: update scrollbar range and
-    -- position from current scroll state
-    local function updateScrollbar()
-        local maxScroll = math.max(
-            0,
-            box:GetHeight() - scroll:GetHeight()
-        )
-        scrollbar:SetMinMaxValues(0, maxScroll)
-        if maxScroll > 0 then
-            scrollbar:Show()
-        else
-            scrollbar:Hide()
-        end
-    end
-
-    -- Mouse-wheel scrolling on the holder frame
-    holder:EnableMouseWheel(true)
-    holder:SetScript("OnMouseWheel", function(_, delta)
-        local cur = scroll:GetVerticalScroll()
-        local maxScroll = math.max(
-            0,
-            box:GetHeight() - scroll:GetHeight()
-        )
-        local step = 20
-        local newVal = cur - (delta * step)
-        newVal = math.max(0, math.min(newVal, maxScroll))
-        scroll:SetVerticalScroll(newVal)
-        scrollbar:SetValue(newVal)
-    end)
-
-    -- Scrollbar drag updates scroll position
-    scrollbar:SetScript("OnValueChanged", function(
-        self, value
-    )
-        scroll:SetVerticalScroll(value)
-    end)
-
-    -- Update scrollbar when text changes
-    box:SetScript("OnTextChanged", function()
-        updateScrollbar()
-    end)
-
-    -- Initial scrollbar state (hidden until needed)
-    scrollbar:Hide()
-
-    holder.editBox = box
-    holder.scroll = scroll
-    holder.scrollbar = scrollbar
-    holder.updateScrollbar = updateScrollbar
-    return box
-end
-
-function Chatter:InitDropdown(dropdown)
-    if not dropdown then
-        return
-    end
-
-    UIDropDownMenu_Initialize(dropdown, function(_, level)
-        if level ~= 1 then
-            return
-        end
-
-        if #self.roster == 0 then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "No known bots"
-            info.isTitle = true
-            info.notCheckable = true
-            UIDropDownMenu_AddButton(info, level)
-            return
-        end
-
-        for _, bot in ipairs(self.roster) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = bot.name
-            info.value = bot.guid
-            info.checked = (bot.guid == self.selectedGuid)
-            info.func = function()
-                Chatter:SelectBot(bot.guid)
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-
-    UIDropDownMenu_SetWidth(dropdown, 260)
-
-    if self.selectedGuid then
-        for _, bot in ipairs(self.roster) do
-            if bot.guid == self.selectedGuid then
-                UIDropDownMenu_SetText(dropdown, bot.name)
-                return
-            end
-        end
-    end
-
-    UIDropDownMenu_SetText(dropdown, "Select a bot")
-end
-
-function Chatter:UpdateDropdown()
-    if self.frame then
-        self:InitDropdown(self.frame.dropdown)
-    end
-    if self.traitsPanel then
-        self:InitDropdown(self.traitsPanel.dropdown)
-    end
-end
-
 function Chatter:ApplyProfileToPanel(p, profile)
     if not p then
         return
@@ -651,13 +434,17 @@ function Chatter:ApplyProfileToPanel(p, profile)
 end
 
 function Chatter:ApplyProfile(profile)
+    if profile.guid ~= self.selectedGuid or self.forgetQueue then
+        return
+    end
     -- A profile that arrives while an upload is still in
     -- flight carries the pre-save values, so applying it
     -- would revert the boxes the player is saving.
     if self.uploadGuid and self.uploadGuid == profile.guid then
         return
     end
-
+    self.pendingProfileGuid = nil
+    self:SetRegenStoryEnabled(not self.pendingBackstoryGuid)
     local awaitingTone = (
         self.pendingToneGuid == profile.guid
     )
@@ -679,7 +466,7 @@ function Chatter:ApplyProfile(profile)
     ChatterDB = ChatterDB or {}
     ChatterDB.selectedGuid = profile.guid
 
-    self:UpdateDropdown()
+    self:UpdateRosterViews()
     if awaitingTone then
         if profile.tone and profile.tone ~= "" then
             self:StopTonePoll()
@@ -702,6 +489,7 @@ function Chatter:ApplyProfile(profile)
 end
 
 function Chatter:SelectBot(guid)
+    if self.forgetQueue then return end
     guid = tonumber(guid)
     if not guid then
         return
@@ -725,18 +513,29 @@ function Chatter:SelectBot(guid)
 
     self.selectedGuid = guid
     self.pendingProfileGuid = guid
-    self:UpdateDropdown()
+    self.loadedTraits = nil
+    self:SetSaveEnabled(false)
+    self:SetRegenStoryEnabled(false)
+    local empty = {trait1 = "", trait2 = "", trait3 = "",
+        tone = "", backstory = ""}
+    self:ApplyProfileToPanel(self.frame, empty)
+    self:ApplyProfileToPanel(self.traitsPanel, empty)
+    self:UpdateRosterViews()
     self:SetStatus("Loading bot profile...", 1, 0.82, 0)
     self:SendCommand("get " .. guid)
 end
 
 function Chatter:RequestRoster()
+    if self.forgetQueue or self.pendingRoster then return end
     self.pendingRoster = {}
+    self.rosterElapsed = 0
+    self:UpdateRosterViews()
     self:SetStatus("Requesting roster...", 1, 0.82, 0)
     self:SendCommand("roster")
 end
 
 function Chatter:SaveProfile()
+    if self.pendingProfileGuid or self.forgetQueue then return end
     if not self.selectedGuid then
         self:SetStatus("Select a bot first.", 1, 0.2, 0.2)
         return
@@ -769,6 +568,7 @@ function Chatter:SaveProfile()
 
     -- Store pending traits for use after confirm
     self.pendingTraits = {
+        guid = self.selectedGuid,
         trait1 = trait1,
         trait2 = trait2,
         trait3 = trait3,
@@ -828,7 +628,8 @@ end
 
 function Chatter:DoSaveProfile()
     local t = self.pendingTraits
-    if not t or not self.selectedGuid then
+    if not t or t.guid ~= self.selectedGuid
+        or self.pendingProfileGuid or self.forgetQueue then
         return
     end
 
@@ -868,22 +669,6 @@ function Chatter:DoSaveProfile()
     self.pendingTraits = nil
 end
 
-function Chatter:ConfirmForget()
-    if not self.selectedGuid then
-        self:SetStatus(
-            "Select a bot first.", 1, 0.2, 0.2
-        )
-        return
-    end
-
-    local botName = self:GetSelectedName()
-        or tostring(self.selectedGuid)
-
-    StaticPopup_Show(
-        "CHATTER_CONFIRM_FORGET", botName
-    )
-end
-
 function Chatter:GetSelectedName()
     if not self.selectedGuid then
         return nil
@@ -892,23 +677,14 @@ function Chatter:GetSelectedName()
     if not guid then return nil end
     for _, entry in ipairs(self.roster or {}) do
         if entry.guid == guid then
-            return self:Decode(entry.name)
+            return entry.name
         end
     end
     return nil
 end
 
-function Chatter:ForgetBot()
-    if not self.selectedGuid then return end
-    self:SetStatus(
-        "Forgetting bot...", 1, 0.82, 0
-    )
-    self:SendCommand(
-        "forget " .. self.selectedGuid
-    )
-end
-
 function Chatter:RegenBackstory()
+    if self.pendingProfileGuid or self.forgetQueue then return end
     if not self.selectedGuid then
         self:SetStatus("Select a bot first.", 1, 0.2, 0.2)
         return
@@ -921,360 +697,6 @@ function Chatter:RegenBackstory()
     self:SetStatus(
         "Regenerating backstory...", 1, 0.82, 0
     )
-end
-
-function Chatter:BuildFrame()
-    if self.frame then
-        return
-    end
-
-    local frame = CreateFrame("Frame", "ChatterMainFrame", UIParent)
-    frame:SetWidth(480)
-    frame:SetHeight(620)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        Chatter:SaveWindowPosition()
-    end)
-    frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = {
-            left = 4,
-            right = 4,
-            top = 4,
-            bottom = 4
-        }
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.9)
-    frame:Hide()
-
-    local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -5)
-
-    local title = frame:CreateFontString(
-        nil, "OVERLAY", "GameFontNormalLarge"
-    )
-    title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -14)
-    title:SetText("Bot Traits")
-
-    local subtitle = frame:CreateFontString(
-        nil, "OVERLAY", "GameFontHighlightSmall"
-    )
-    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    subtitle:SetText(
-        "Edit persistent bot traits and view"
-        .. " generated tone"
-    )
-
-    createLabel(frame, "Known bots", 18, -70)
-
-    local dropdown = CreateFrame(
-        "Frame", "ChatterBotDropdown",
-        frame, "UIDropDownMenuTemplate"
-    )
-    dropdown:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -86)
-    frame.dropdown = dropdown
-
-    local refresh = CreateFrame(
-        "Button", nil, frame, "UIPanelButtonTemplate"
-    )
-    refresh:SetWidth(80)
-    refresh:SetHeight(24)
-    refresh:SetPoint("LEFT", dropdown, "RIGHT", -10, 2)
-    refresh:SetText("Refresh")
-    refresh:SetScript("OnClick", function()
-        Chatter:RequestRoster()
-    end)
-
-    local forget = CreateFrame(
-        "Button", nil, frame, "UIPanelButtonTemplate"
-    )
-    forget:SetWidth(70)
-    forget:SetHeight(24)
-    forget:SetPoint("LEFT", refresh, "RIGHT", 4, 0)
-    forget:SetText("Forget")
-    forget:SetScript("OnClick", function()
-        Chatter:ConfirmForget()
-    end)
-
-    createLabel(frame, "Trait 1", 18, -126)
-    frame.trait1 = createEditBox(frame, 18, -144, 435, 24)
-    frame.trait1:SetMaxLetters(64)
-    frame.trait1:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(frame, "Trait 2", 18, -174)
-    frame.trait2 = createEditBox(frame, 18, -192, 435, 24)
-    frame.trait2:SetMaxLetters(64)
-    frame.trait2:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(frame, "Trait 3", 18, -222)
-    frame.trait3 = createEditBox(frame, 18, -240, 435, 24)
-    frame.trait3:SetMaxLetters(64)
-    frame.trait3:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(frame, "Tone (generated)", 18, -280)
-    frame.tone = createEditBox(frame, 18, -298, 435, 24)
-    frame.tone:SetMaxLetters(120)
-    frame.tone:EnableMouse(false)
-
-    createLabel(frame, "Background Story", 18, -360)
-    frame.backstory = createMultiLineEditBox(
-        frame, 18, -378, 435, 130
-    )
-    frame.backstory:SetMaxLetters(1000)
-    frame.backstory:EnableMouse(false)
-    frame.backstory:SetTextColor(0.7, 0.7, 0.7)
-
-    local regenStory = CreateFrame(
-        "Button", nil, frame, "UIPanelButtonTemplate"
-    )
-    regenStory:SetWidth(130)
-    regenStory:SetHeight(22)
-    regenStory:SetPoint(
-        "TOPLEFT", frame, "TOPLEFT", 18, -516
-    )
-    regenStory:SetText("Regenerate Story")
-    regenStory:SetScript("OnClick", function()
-        Chatter:RegenBackstory()
-    end)
-    frame.regenStoryBtn = regenStory
-
-    local status = frame:CreateFontString(
-        nil, "OVERLAY", "GameFontNormalSmall"
-    )
-    status:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 20)
-    status:SetWidth(200)
-    status:SetJustifyH("LEFT")
-    status:SetText("")
-    frame.status = status
-
-    local closeButton = CreateFrame(
-        "Button", nil, frame, "UIPanelButtonTemplate"
-    )
-    closeButton:SetWidth(90)
-    closeButton:SetHeight(26)
-    closeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 14)
-    closeButton:SetText("Close")
-    closeButton:SetScript("OnClick", function()
-        frame:Hide()
-    end)
-
-    local save = CreateFrame(
-        "Button", nil, frame, "UIPanelButtonTemplate"
-    )
-    save:SetWidth(120)
-    save:SetHeight(26)
-    save:SetPoint("RIGHT", closeButton, "LEFT", -10, 0)
-    save:SetText("Save Traits")
-    save:SetScript("OnClick", function()
-        Chatter:SaveProfile()
-    end)
-    save:Disable()
-    frame.saveBtn = save
-
-    self.frame = frame
-    self:RestoreWindowPosition()
-    self:UpdateDropdown()
-end
-
-local function addCategory(panel)
-    if type(InterfaceOptions_AddCategory) == "function" then
-        InterfaceOptions_AddCategory(panel)
-    elseif type(InterfaceOptionsFrame_AddCategory) == "function" then
-        InterfaceOptionsFrame_AddCategory(panel)
-    elseif type(INTERFACEOPTIONS_ADDONCATEGORIES) == "table" then
-        table.insert(INTERFACEOPTIONS_ADDONCATEGORIES, panel)
-    end
-end
-
-function Chatter:BuildOptionsPanel()
-    if self.optionsPanel then
-        return
-    end
-
-    -- Parent panel: overview and slash commands
-    local parent = CreateFrame(
-        "Frame",
-        "ChatterOptionsPanel",
-        UIParent
-    )
-    parent.name = "Chatter"
-    parent:Hide()
-
-    local title = parent:CreateFontString(
-        nil, "ARTWORK", "GameFontNormalLarge"
-    )
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Chatter")
-
-    local desc = parent:CreateFontString(
-        nil, "ARTWORK", "GameFontHighlight"
-    )
-    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    desc:SetText(
-        "Ambient bot conversation module for"
-        .. " mod-llm-chatter"
-    )
-
-    local slashHint = parent:CreateFontString(
-        nil, "ARTWORK", "GameFontNormal"
-    )
-    slashHint:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
-    slashHint:SetText("Slash commands: /chatter or /llmc")
-
-    addCategory(parent)
-    self.optionsPanel = parent
-
-    -- Child panel: Bot Traits editor
-    local child = CreateFrame(
-        "Frame",
-        "ChatterTraitsPanel",
-        UIParent
-    )
-    child.name = "Bot Traits"
-    child.parent = "Chatter"
-    child:Hide()
-
-    local cTitle = child:CreateFontString(
-        nil, "ARTWORK", "GameFontNormalLarge"
-    )
-    cTitle:SetPoint("TOPLEFT", 16, -16)
-    cTitle:SetText("Bot Traits")
-
-    local cDesc = child:CreateFontString(
-        nil, "ARTWORK", "GameFontHighlightSmall"
-    )
-    cDesc:SetPoint("TOPLEFT", cTitle, "BOTTOMLEFT", 0, -6)
-    cDesc:SetText(
-        "Edit persistent bot traits and view"
-        .. " generated tone"
-    )
-
-    createLabel(child, "Known bots", 18, -70)
-
-    local dropdown = CreateFrame(
-        "Frame",
-        "ChatterOptBotDropdown",
-        child,
-        "UIDropDownMenuTemplate"
-    )
-    dropdown:SetPoint("TOPLEFT", child, "TOPLEFT", 4, -86)
-    child.dropdown = dropdown
-
-    local refresh = CreateFrame(
-        "Button", nil, child, "UIPanelButtonTemplate"
-    )
-    refresh:SetWidth(80)
-    refresh:SetHeight(24)
-    refresh:SetPoint("LEFT", dropdown, "RIGHT", -10, 2)
-    refresh:SetText("Refresh")
-    refresh:SetScript("OnClick", function()
-        Chatter:RequestRoster()
-    end)
-
-    local cForget = CreateFrame(
-        "Button", nil, child, "UIPanelButtonTemplate"
-    )
-    cForget:SetWidth(70)
-    cForget:SetHeight(24)
-    cForget:SetPoint("LEFT", refresh, "RIGHT", 4, 0)
-    cForget:SetText("Forget")
-    cForget:SetScript("OnClick", function()
-        Chatter:ConfirmForget()
-    end)
-
-    createLabel(child, "Trait 1", 18, -126)
-    child.trait1 = createEditBox(child, 18, -144, 435, 24)
-    child.trait1:SetMaxLetters(64)
-    child.trait1:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(child, "Trait 2", 18, -174)
-    child.trait2 = createEditBox(child, 18, -192, 435, 24)
-    child.trait2:SetMaxLetters(64)
-    child.trait2:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(child, "Trait 3", 18, -222)
-    child.trait3 = createEditBox(child, 18, -240, 435, 24)
-    child.trait3:SetMaxLetters(64)
-    child.trait3:SetScript("OnTextChanged", function()
-        Chatter:UpdateSaveButton()
-    end)
-
-    createLabel(child, "Tone (generated)", 18, -280)
-    child.tone = createEditBox(child, 18, -298, 435, 24)
-    child.tone:SetMaxLetters(120)
-    child.tone:EnableMouse(false)
-
-    createLabel(child, "Background Story", 18, -360)
-    child.backstory = createMultiLineEditBox(
-        child, 18, -378, 435, 130
-    )
-    child.backstory:SetMaxLetters(1000)
-    child.backstory:EnableMouse(false)
-    child.backstory:SetTextColor(0.7, 0.7, 0.7)
-
-    local cRegenStory = CreateFrame(
-        "Button", nil, child, "UIPanelButtonTemplate"
-    )
-    cRegenStory:SetWidth(130)
-    cRegenStory:SetHeight(22)
-    cRegenStory:SetPoint(
-        "TOPLEFT", child, "TOPLEFT", 18, -516
-    )
-    cRegenStory:SetText("Regenerate Story")
-    cRegenStory:SetScript("OnClick", function()
-        Chatter:RegenBackstory()
-    end)
-    child.regenStoryBtn = cRegenStory
-
-    local status = child:CreateFontString(
-        nil, "OVERLAY", "GameFontNormalSmall"
-    )
-    status:SetPoint("TOPLEFT", child, "TOPLEFT", 18, -546)
-    status:SetWidth(250)
-    status:SetJustifyH("LEFT")
-    status:SetText("")
-    child.status = status
-
-    local save = CreateFrame(
-        "Button", nil, child, "UIPanelButtonTemplate"
-    )
-    save:SetWidth(120)
-    save:SetHeight(26)
-    save:SetPoint("TOPRIGHT", child, "TOPRIGHT", -18, -540)
-    save:SetText("Save Traits")
-    save:SetScript("OnClick", function()
-        Chatter:SaveProfile()
-    end)
-    save:Disable()
-    child.saveBtn = save
-
-    child:SetScript("OnShow", function()
-        Chatter:RequestRoster()
-    end)
-
-    addCategory(child)
-    self.traitsPanel = child
 end
 
 function Chatter:Toggle()
@@ -1311,10 +733,18 @@ function Chatter:FinishRoster()
         return string.lower(a.name) < string.lower(b.name)
     end)
 
-    self:UpdateDropdown()
+    self:UpdateRosterViews()
 
     if #self.roster == 0 then
         self.selectedGuid = nil
+        self.pendingProfileGuid = nil
+        self.loadedTraits = nil
+        ChatterDB.selectedGuid = nil
+        self:StopTonePoll()
+        self:StopBackstoryPoll()
+        self:SetSaveEnabled(false)
+        self:SetRegenStoryEnabled(false)
+        self:UpdateRosterViews()
         local empty = {
             trait1 = "", trait2 = "", trait3 = "",
             tone = "", backstory = "",
@@ -1461,7 +891,8 @@ function Chatter:HandleSystemMessage(message)
         local guid, name, flag = string.match(
             rest, "^(%d+)%s+(%S+)%s+(%S+)"
         )
-        if guid and name then
+        if guid and name and tonumber(guid) == self.selectedGuid
+            and not self.forgetQueue then
             self.selectedGuid = tonumber(guid)
             self:UnlockSave()
             local changed = (flag == "changed")
@@ -1509,34 +940,17 @@ function Chatter:HandleSystemMessage(message)
     end
 
     if command == "FORGOTTEN" then
-        local guid, name = string.match(
-            rest, "^(%d+)%s+(%S+)$"
-        )
-        local displayName = guid and name
-            and self:Decode(name) or "Bot"
-        self:SetStatus(
-            displayName .. " forgotten.",
-            0.4, 1, 0.4
-        )
-        self:StopTonePoll()
-        self:StopBackstoryPoll()
-        self.selectedGuid = nil
-        self.loadedTraits = nil
-        self:SetSaveEnabled(false)
-        local empty = {
-            trait1 = "", trait2 = "",
-            trait3 = "", tone = "",
-            backstory = "",
-        }
-        self:ApplyProfileToPanel(self.frame, empty)
-        self:ApplyProfileToPanel(
-            self.traitsPanel, empty
-        )
-        self:RequestRoster()
+        self:HandleForgotten(tonumber(string.match(rest, "^(%d+)%s")))
         return
     end
 
     if command == "ERROR" then
+        if self.forgetQueue then
+            self:FinishForgetBatch("Stopped: " .. self:Decode(
+                string.match(rest, "^%S+%s*(.-)$") or rest))
+            return
+        end
+        self.pendingRoster = nil
         local _, encoded = string.match(
             rest, "^(%S+)%s*(.-)$"
         )
@@ -1553,7 +967,6 @@ end
 local function chatterSystemFilter(_, _, message, ...)
     if type(message) == "string"
         and string.find(message, "^" .. Chatter.prefix) then
-        Chatter:HandleSystemMessage(message)
         return true
     end
     return false
@@ -1572,19 +985,6 @@ StaticPopupDialogs["CHATTER_CONFIRM_SAVE_TRAITS"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CHATTER_CONFIRM_FORGET"] = {
-    text = "Forget %s? Their memories with you will be erased. Their personality is preserved.",
-    button1 = "Forget",
-    button2 = "Cancel",
-    OnAccept = function()
-        Chatter:ForgetBot()
-    end,
-    timeout = 0,
-    whileDead = false,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 SLASH_CHATTER1 = "/chatter"
 SLASH_CHATTER2 = "/llmc"
 SlashCmdList["CHATTER"] = function()
@@ -1594,11 +994,20 @@ end
 Chatter:SetScript("OnUpdate", function(self, elapsed)
     self:HandleSendQueue(elapsed)
     self:HandleSaveLock(elapsed)
+    if self.pendingRoster then
+        self.rosterElapsed = (self.rosterElapsed or 0) + elapsed
+        if self.rosterElapsed >= 10 then
+            self.pendingRoster = nil
+            self:UpdateRosterViews()
+            self:SetStatus("Roster request timed out. Use Refresh.", 1, 0.4, 0.3)
+        end
+    end
+    self:HandleForgetQueue(elapsed)
     self:HandleTonePoll(elapsed)
     self:HandleBackstoryPoll(elapsed)
 end)
 
-Chatter:SetScript("OnEvent", function(self, event)
+Chatter:SetScript("OnEvent", function(self, event, message)
     if event == "PLAYER_LOGIN" then
         ChatterDB = ChatterDB or {}
         self:BuildOptionsPanel()
@@ -1609,12 +1018,12 @@ Chatter:SetScript("OnEvent", function(self, event)
         )
     elseif event == "PLAYER_LOGOUT" then
         self:SaveWindowPosition()
+    elseif event == "CHAT_MSG_SYSTEM" then
+        -- Filters run once per chat window; process each response only once.
+        self:HandleSystemMessage(message)
     end
 end)
 
 Chatter:RegisterEvent("PLAYER_LOGIN")
 Chatter:RegisterEvent("PLAYER_LOGOUT")
-
-
-
-
+Chatter:RegisterEvent("CHAT_MSG_SYSTEM")
