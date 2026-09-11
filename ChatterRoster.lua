@@ -25,6 +25,9 @@ function Chatter:UpdateRosterViews()
     if self.traitsPanel and self.traitsPanel.refreshList then
         self.traitsPanel.refreshList()
     end
+    if self.storiesPanel and self.storiesPanel.refreshList then
+        self.storiesPanel.refreshList()
+    end
 end
 
 function Chatter:ConfirmForget()
@@ -95,6 +98,7 @@ function Chatter:HandleForgotten(guid)
         self.pendingProfileGuid = nil
         self:ApplyProfileToPanel(self.frame, {})
         self:ApplyProfileToPanel(self.traitsPanel, {})
+        self:ApplyProfileToPanel(self.storiesPanel, {})
     end
     if not self.forgetQueue then
         self:RequestRoster()

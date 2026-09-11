@@ -65,6 +65,9 @@ function Chatter:SetStatus(text, r, g, b)
     if self.traitsPanel then
         table.insert(panels, self.traitsPanel)
     end
+    if self.storiesPanel then
+        table.insert(panels, self.storiesPanel)
+    end
     for _, p in ipairs(panels) do
         if p.status then
             p.status:SetText(text or "")
@@ -142,6 +145,7 @@ function Chatter:SetRegenStoryEnabled(enabled)
     end
     apply(self.frame)
     apply(self.traitsPanel)
+    apply(self.storiesPanel)
 end
 
 function Chatter:SetSaveEnabled(enabled)
@@ -212,12 +216,12 @@ function Chatter:StartBackstoryPoll(guid)
             0.5, 0.5, 0.5
         )
     end
-    if self.traitsPanel
-        and self.traitsPanel.backstory then
-        self.traitsPanel.backstory:SetText(
+    if self.storiesPanel
+        and self.storiesPanel.backstory then
+        self.storiesPanel.backstory:SetText(
             placeholder
         )
-        self.traitsPanel.backstory:SetTextColor(
+        self.storiesPanel.backstory:SetTextColor(
             0.5, 0.5, 0.5
         )
     end
@@ -345,6 +349,7 @@ function Chatter:ApplyProfile(profile)
 
     self:ApplyProfileToPanel(self.frame, profile)
     self:ApplyProfileToPanel(self.traitsPanel, profile)
+    self:ApplyProfileToPanel(self.storiesPanel, profile)
 
     -- Traits just loaded — no unsaved changes yet
     self:SetSaveEnabled(false)
@@ -398,6 +403,7 @@ function Chatter:SelectBot(guid)
         tone = "", backstory = ""}
     self:ApplyProfileToPanel(self.frame, empty)
     self:ApplyProfileToPanel(self.traitsPanel, empty)
+    self:ApplyProfileToPanel(self.storiesPanel, empty)
     self:UpdateRosterViews()
     self:SetStatus("Loading bot profile...", 1, 0.82, 0)
     self:SendCommand("get " .. guid)
@@ -584,6 +590,7 @@ function Chatter:FinishRoster()
         }
         self:ApplyProfileToPanel(self.frame, empty)
         self:ApplyProfileToPanel(self.traitsPanel, empty)
+        self:ApplyProfileToPanel(self.storiesPanel, empty)
         self:SetStatus("No known bots yet.", 1, 0.82, 0)
         return
     end
@@ -653,10 +660,10 @@ function Chatter:HandleBackstoryPayload(rest)
                 0.7, 0.7, 0.7
             )
         end
-        if self.traitsPanel
-            and self.traitsPanel.backstory then
-            self.traitsPanel.backstory:SetText(text)
-            self.traitsPanel.backstory:SetTextColor(
+        if self.storiesPanel
+            and self.storiesPanel.backstory then
+            self.storiesPanel.backstory:SetText(text)
+            self.storiesPanel.backstory:SetTextColor(
                 0.7, 0.7, 0.7
             )
         end
