@@ -40,6 +40,9 @@ local function traitTexts(panel)
     }
 end
 
+-- Both editors that carry traits are checked every time. The
+-- Background Stories section has no trait boxes at all, which
+-- is asserted here rather than assumed.
 local function checkTraits(C, expected, label)
     for _, panel in ipairs({C.frame, C.traitsPanel}) do
         local actual = traitTexts(panel)
@@ -49,6 +52,21 @@ local function checkTraits(C, expected, label)
                 label .. " trait" .. i
             )
         end
+    end
+    check(
+        C.storiesPanel.trait1 == nil,
+        "the stories section should hold no traits"
+    )
+end
+
+-- Status text reaches every open section, so the player sees
+-- the same explanation wherever they are.
+local function checkStatusEverywhere(C, expected, label)
+    for _, name in ipairs({"frame", "traitsPanel", "storiesPanel"}) do
+        checkEqual(
+            C[name].status:GetText(), expected,
+            label .. " status on " .. name
+        )
     end
 end
 
@@ -156,9 +174,8 @@ tests["rejection mid-upload keeps the edit"] = function()
         C.frame.saveBtn.enabled, true,
         "Save should be available to retry"
     )
-    checkEqual(
-        C.frame.status:GetText(), "Chunk is too long",
-        "status"
+    checkStatusEverywhere(
+        C, "Chunk is too long", "after rejection"
     )
 end
 

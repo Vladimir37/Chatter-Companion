@@ -191,11 +191,14 @@ local function createMultiLineEditBox(
     return box
 end
 
-function Chatter:BuildEditor(panel)
-    local title = createLabel(panel, "Bot Traits", 16, -16)
+function Chatter:BuildEditor(panel, section)
+    local storyOnly = section == "stories"
+    local title = createLabel(panel,
+        storyOnly and "Background Stories" or "Bot Traits", 16, -16)
     title:SetFontObject(GameFontNormalLarge)
     local hint = createLabel(panel,
-        "Click a name to edit. Check bots to forget their memories.", 16, -40)
+        storyOnly and "Select a bot to read or regenerate its story."
+        or "Click a name to edit. Check bots to forget their memories.", 16, -40)
     hint:SetFontObject(GameFontHighlightSmall)
     hint:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -40)
     hint:SetHeight(28)
@@ -239,6 +242,12 @@ function Chatter:BuildEditor(panel)
         Chatter:UpdateRosterViews()
     end)
     clear:SetPoint("LEFT", all, "RIGHT", 4, 0)
+    if storyOnly then
+        all:Hide()
+        clear:Hide()
+        list:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", 0, 24)
+        count:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 0, 6)
+    end
 
     local refresh = button(panel, "Refresh", 80, function()
         Chatter:RequestRoster()
@@ -253,7 +262,7 @@ function Chatter:BuildEditor(panel)
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -34, 76)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetWidth(200)
-    content:SetHeight(454)
+    content:SetHeight(section == "traits" and 224 or 454)
     scroll:SetScrollChild(content)
     local editorBar = slider(panel)
     editorBar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, 0)
@@ -263,6 +272,9 @@ function Chatter:BuildEditor(panel)
     end)
     local function resizeEditor()
         content:SetWidth(math.max(1, scroll:GetWidth()))
+        if storyOnly then
+            content:SetHeight(math.max(1, scroll:GetHeight()))
+        end
         local maximum = math.max(0, content:GetHeight() - scroll:GetHeight())
         editorBar:SetMinMaxValues(0, maximum)
         editorBar:SetValue(math.min(editorBar:GetValue(), maximum))
@@ -276,7 +288,7 @@ function Chatter:BuildEditor(panel)
             math.min(maximum, editorBar:GetValue() - delta * 28)))
     end)
 
-    for i = 1, 3 do
+    for i = 1, storyOnly and 0 or 3 do
         local key = "trait" .. i
         local y = -(i - 1) * 48
         createLabel(content, "Trait " .. i, 0, y)
@@ -303,17 +315,34 @@ function Chatter:BuildEditor(panel)
             panel["trait" .. (i % 3 + 1)]:SetFocus()
         end)
     end
-    createLabel(content, "Tone (generated)", 0, -148)
-    panel.tone = createMultiLineEditBox(content, 0, -166, 200, 58)
-    panel.tone:EnableMouse(false)
-    createLabel(content, "Background Story", 0, -236)
-    panel.backstory = createMultiLineEditBox(content, 0, -254, 200, 158)
-    panel.backstory:EnableMouse(false)
-    panel.regenStoryBtn = button(content, "Regenerate Story", 136, function()
-        Chatter:RegenBackstory()
-    end)
-    panel.regenStoryBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -424)
-    panel.regenStoryBtn:Disable()
+    if not storyOnly then
+        createLabel(content, "Tone (generated)", 0, -148)
+        panel.tone = createMultiLineEditBox(content, 0, -166, 200, 58)
+        panel.tone:EnableMouse(false)
+    end
+    if section ~= "traits" then
+        if not storyOnly then
+            createLabel(content, "Background Story", 0, -236)
+        end
+        panel.backstory = createMultiLineEditBox(content, 0, -254, 200, 158)
+        panel.backstory:EnableMouse(false)
+        panel.regenStoryBtn = button(content, "Regenerate Story", 136, function()
+            Chatter:RegenBackstory()
+        end)
+        panel.regenStoryBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -424)
+        panel.regenStoryBtn:Disable()
+        if storyOnly then
+            -- The story fills the viewport; its own scrollbar handles long text.
+            local holder = panel.backstory:GetParent()
+            holder:ClearAllPoints()
+            holder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+            holder:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -4, 0)
+            panel.regenStoryBtn:ClearAllPoints()
+            panel.regenStoryBtn:SetParent(panel)
+            panel.regenStoryBtn:SetPoint("BOTTOMRIGHT", panel,
+                "BOTTOMRIGHT", -16, 44)
+        end
+    end
 
     panel.forgetBtn = button(panel, "Forget selected", 144, function()
         Chatter:ConfirmForget()
@@ -324,6 +353,10 @@ function Chatter:BuildEditor(panel)
     end)
     panel.saveBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 44)
     panel.saveBtn:Disable()
+    if storyOnly then
+        panel.forgetBtn:Hide()
+        panel.saveBtn:Hide()
+    end
     panel.status = createLabel(panel, "", 16, 0)
     panel.status:ClearAllPoints()
     panel.status:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 16, 10)
@@ -354,8 +387,9 @@ function Chatter:BuildEditor(panel)
                 row.check:SetWidth(24)
                 row.check:SetHeight(24)
                 row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
+                if storyOnly then row.check:Hide() end
                 row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                row.text:SetPoint("LEFT", row, "LEFT", 26, 0)
+                row.text:SetPoint("LEFT", row, "LEFT", storyOnly and 4 or 26, 0)
                 row.text:SetPoint("RIGHT", row, "RIGHT", -2, 0)
                 row.text:SetJustifyH("LEFT")
                 row:SetScript("OnClick", function(self)
@@ -397,6 +431,9 @@ function Chatter:BuildEditor(panel)
         for _ in pairs(Chatter.checkedBots) do checked = checked + 1 end
         count:SetText(#filtered .. "/" .. #Chatter.roster .. " bots | "
             .. checked .. " checked")
+        if storyOnly then
+            count:SetText(#filtered .. "/" .. #Chatter.roster .. " bots")
+        end
         selected:SetText(Chatter:GetSelectedName() or "Select a bot")
         if #filtered == 0 then
             empty:SetText(#Chatter.roster == 0 and "No known bots" or "No matches")
@@ -486,9 +523,15 @@ function Chatter:BuildOptionsPanel()
     createLabel(parent, "Chatter", 16, -16):SetFontObject(GameFontNormalLarge)
     local text = createLabel(parent,
         "Manage bot traits, generated stories and shared memories.\n\n"
-        .. "Choose Bot Traits on the left, or use /chatter or /llmc.", 16, -48)
+        .. "Bot Traits: edit traits, view tone and manage known bots.\n\n"
+        .. "Background Stories: read and regenerate a bot's story.\n\n"
+        .. "Use the full editor to see everything together.", 16, -48)
     text:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, -48)
     text:SetFontObject(GameFontHighlight)
+    parent.openEditorBtn = button(parent, "Open full editor", 160, function()
+        Chatter:OpenFullEditor()
+    end)
+    parent.openEditorBtn:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -20)
     addCategory(parent)
     self.optionsPanel = parent
     local child = CreateFrame("Frame", "ChatterTraitsPanel", UIParent)
@@ -496,10 +539,39 @@ function Chatter:BuildOptionsPanel()
     child.parent = "Chatter"
     child:Hide()
     self.traitsPanel = child
-    self:BuildEditor(child)
+    self:BuildEditor(child, "traits")
     child:HookScript("OnShow", function()
         if Chatter.frame then Chatter.frame:Hide() end
-        Chatter:RequestRoster()
+        Chatter:ShowOptionsEditor()
     end)
     addCategory(child)
+    local stories = CreateFrame("Frame", "ChatterStoriesPanel", UIParent)
+    stories.name = "Background Stories"
+    stories.parent = "Chatter"
+    stories:Hide()
+    self.storiesPanel = stories
+    self:BuildEditor(stories, "stories")
+    stories:HookScript("OnShow", function()
+        if Chatter.frame then Chatter.frame:Hide() end
+        Chatter:ShowOptionsEditor()
+    end)
+    addCategory(stories)
+end
+
+function Chatter:ShowOptionsEditor()
+    -- Navigation must not reload the profile over unsaved trait edits.
+    self:UpdateRosterViews()
+    if not self.loadedTraits and not self.pendingProfileGuid then
+        self:RequestRoster()
+    end
+end
+
+function Chatter:OpenFullEditor()
+    self:BuildFrame()
+    if InterfaceOptionsFrame then InterfaceOptionsFrame:Hide() end
+    if GameMenuFrame then GameMenuFrame:Hide() end
+    self.frame:Show()
+    self.frame:Raise()
+    self:UpdateSaveButton()
+    self:ShowOptionsEditor()
 end

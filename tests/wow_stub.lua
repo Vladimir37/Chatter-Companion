@@ -42,21 +42,30 @@ local function newButton()
     return btn
 end
 
--- One editor: the /chatter window and the Interface Options
--- "Bot Traits" panel are the same shape, and the addon keeps
--- them in step, so the tests exercise both.
-local function newPanel(shown)
+-- One editor, shaped the way BuildEditor shapes it. The
+-- /chatter window carries everything; the Interface Options
+-- "Bot Traits" section has the traits and tone but no story,
+-- and "Background Stories" has only the story. Which widgets
+-- exist matters: the addon guards on their presence.
+local function newPanel(shown, section)
     local p = {
-        trait1 = newEditBox(),
-        trait2 = newEditBox(),
-        trait3 = newEditBox(),
-        tone = newFontString(),
-        backstory = newFontString(),
         status = newFontString(),
-        saveBtn = newButton(),
-        regenStoryBtn = newButton(),
         shown = shown and true or false,
     }
+
+    if section ~= "stories" then
+        p.trait1 = newEditBox()
+        p.trait2 = newEditBox()
+        p.trait3 = newEditBox()
+        p.tone = newFontString()
+        p.saveBtn = newButton()
+    end
+
+    if section ~= "traits" then
+        p.backstory = newFontString()
+        p.regenStoryBtn = newButton()
+    end
+
     function p:IsShown() return self.shown end
     function p:Show() self.shown = true end
     function p:Hide() self.shown = false end
@@ -130,7 +139,8 @@ function stub.load(root)
 
     local C = _G.ChatterEventFrame
     C.frame = newPanel(true)
-    C.traitsPanel = newPanel(false)
+    C.traitsPanel = newPanel(false, "traits")
+    C.storiesPanel = newPanel(false, "stories")
     -- Supplied by ChatterUI, which the harness does not load.
     C.BuildFrame = function() end
     C.BuildOptionsPanel = function() end

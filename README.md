@@ -132,10 +132,19 @@ traits and save again.
 
 ### Managing known bots
 
-The floating window and Interface Options use the same two-column editor.
-The bot list has a fixed viewport and scrolls independently of the profile.
-The profile fields fit the available width; scroll down to read the story
-or regenerate it in a smaller options panel. Save and Forget stay visible.
+The `/chatter` floating window shows traits, tone and background story
+together. The bot list scrolls independently of the profile.
+
+Interface Options > AddOns > Chatter has two dedicated sections:
+
+- **Bot Traits**: edit the three traits, view tone and manage known bots.
+- **Background Stories**: select a bot, read its scrollable story and use
+  **Regenerate Story** at the bottom.
+
+Both sections share the selected bot. Switching sections preserves unsaved
+trait edits. The Chatter overview has an **Open full editor** button that
+closes Interface Options and opens the floating editor with the same bot
+and edits.
 
 Check the boxes beside several bot names, then click **Forget selected**.
 **Check all** checks every bot matching the current search, including those
@@ -156,10 +165,11 @@ Keep `Chatter.lua`, `ChatterRoster.lua`, and `ChatterUI.lua` alongside
 required. After updating, restart the client if it has not discovered the
 new Lua files; otherwise `/reload` reloads the addon.
 
-After an update, check both `/chatter` and Interface Options > AddOns >
-Chatter > Bot Traits. Verify scrolling with a long roster and story, search,
-checkbox selection, and saving from either editor. Only confirm Forget on
-bots whose shared memories you intend to erase.
+After an update, check `/chatter` and both Interface Options sections,
+**Bot Traits** and **Background Stories**. Verify scrolling with a long
+roster in each, a long story in the full editor and in Background Stories,
+search, checkbox selection, and saving from either trait editor. Only
+confirm Forget on bots whose shared memories you intend to erase.
 
 ### Tests
 
