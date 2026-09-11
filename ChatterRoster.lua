@@ -50,6 +50,10 @@ end
 
 function Chatter:StartForgetBatch(targets)
     if self.forgetQueue or not targets or #targets == 0 then return end
+    -- Bots are about to be erased, so an unfinished save for
+    -- one of them has nothing left to save to.
+    self.unsavedTraits = nil
+    if self.uploadGuid then self:AbortUpload() end
     self:StopTonePoll()
     self:StopBackstoryPoll()
     self.pendingProfileGuid = nil
@@ -93,6 +97,7 @@ function Chatter:HandleForgotten(guid)
         ChatterDB.selectedGuid = nil
         self.loadedTraits = nil
         self.pendingProfileGuid = nil
+        self.unsavedTraits = nil
         self:ApplyProfileToPanel(self.frame, {})
         self:ApplyProfileToPanel(self.traitsPanel, {})
     end
