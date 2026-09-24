@@ -17,6 +17,7 @@ package.path = here .. "/?.lua;" .. package.path
 
 local suites = {
     "test_upload_lifecycle",
+    "test_encoding",
 }
 
 local passed, failed = 0, {}

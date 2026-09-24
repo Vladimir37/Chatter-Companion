@@ -63,14 +63,23 @@ local function sanitizeInput(value)
     return trim(value)
 end
 
+-- The client replaces %f (focus name) and %t (target name) in
+-- every outgoing chat line, case-insensitively, so an escape
+-- must never read %F. Bytes 0xF0-0xFF, which only occur in
+-- 4-byte UTF-8 characters, are written as ~FX instead, and ~
+-- itself is always escaped so it can only start one of those.
 function Chatter:Encode(value)
     value = sanitizeInput(value)
     if value == "" then
         return "-"
     end
 
-    return (value:gsub("([^%w%-_%.~])", function(char)
-        return string.format("%%%02X", string.byte(char))
+    return (value:gsub("([^%w%-_%.])", function(char)
+        local byte = string.byte(char)
+        if byte >= 0xF0 then
+            return string.format("~%02X", byte)
+        end
+        return string.format("%%%02X", byte)
     end))
 end
 
@@ -149,8 +158,12 @@ function Chatter:HandleSendQueue(elapsed)
     end
 end
 
--- Splits a percent-encoded value on a character budget
--- without ever cutting a %XX escape in half.
+-- Splits an encoded value on a character budget without ever
+-- cutting a %XX or ~FX escape in half.
+local function startsEscape(char)
+    return char == "%" or char == "~"
+end
+
 function Chatter:SplitEncoded(encoded, budget)
     local chunks = {}
     local total = string.len(encoded)
@@ -160,9 +173,9 @@ function Chatter:SplitEncoded(encoded, budget)
         local stop = pos + budget - 1
         if stop >= total then
             stop = total
-        elseif string.sub(encoded, stop, stop) == "%" then
+        elseif startsEscape(string.sub(encoded, stop, stop)) then
             stop = stop - 1
-        elseif string.sub(encoded, stop - 1, stop - 1) == "%" then
+        elseif startsEscape(string.sub(encoded, stop - 1, stop - 1)) then
             stop = stop - 2
         end
 

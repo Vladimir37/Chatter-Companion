@@ -38,6 +38,12 @@ are percent-encoded. When a save does not fit, the addon uploads it in
 pieces using the `put`, `commit` and `cancel` commands, and a server that
 does not know those commands cannot accept it.
 
+Traits containing emoji or other 4-byte UTF-8 characters also need a
+current server. The client replaces `%f` in every outgoing chat line with
+the focus target's name, so the addon sends those bytes as `~F0`–`~F4`
+instead of `%F0`–`%F4`, and an older server does not decode them, so
+those characters arrive garbled.
+
 Short saves still work everywhere: the addon only splits an upload when it
 has to, and otherwise sends the single-line `set` that every version of
 `mod-llm-chatter` understands.
